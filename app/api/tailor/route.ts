@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { TailoringIntensity } from "@prisma/client";
+import { getFallbackStore, useDb } from "@/lib/fallback-store";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
 import { analyzeMatch, tailorResume } from "@/services/tailor";
@@ -23,19 +24,31 @@ export async function POST(req: Request) {
     const masterOverride = body.masterJson as StructuredResume | undefined;
     const jobOverride = body.jobJson as JobPostingStructured | undefined;
 
+    const store = getFallbackStore();
     let master: StructuredResume | null = masterOverride ?? null;
     if (!master && masterId) {
-      const m = await prisma.masterResume.findFirst({
-        where: { id: masterId, userId },
-      });
-      master = prismaJsonToStructuredResume(m?.structuredJson);
+      if (!useDb()) {
+        master =
+          store.master?.id === masterId && store.master.userId === userId
+            ? store.master.structuredJson
+            : null;
+      } else {
+        const m = await prisma.masterResume.findFirst({
+          where: { id: masterId, userId },
+        });
+        master = prismaJsonToStructuredResume(m?.structuredJson);
+      }
     }
     if (!master) {
-      const latest = await prisma.masterResume.findFirst({
-        where: { userId },
-        orderBy: { updatedAt: "desc" },
-      });
-      master = prismaJsonToStructuredResume(latest?.structuredJson);
+      if (!useDb()) {
+        master = store.master?.userId === userId ? store.master.structuredJson : null;
+      } else {
+        const latest = await prisma.masterResume.findFirst({
+          where: { userId },
+          orderBy: { updatedAt: "desc" },
+        });
+        master = prismaJsonToStructuredResume(latest?.structuredJson);
+      }
     }
     if (!master) {
       return NextResponse.json(
@@ -46,10 +59,15 @@ export async function POST(req: Request) {
 
     let job: JobPostingStructured | null = jobOverride ?? null;
     if (!job && jobPostingId) {
-      const j = await prisma.jobPosting.findFirst({
-        where: { id: jobPostingId, userId },
-      });
-      job = prismaJsonToJobPosting(j?.structuredJson);
+      if (!useDb()) {
+        const stored = store.jobs.find((j) => j.id === jobPostingId && j.userId === userId);
+        job = stored?.structured ?? null;
+      } else {
+        const j = await prisma.jobPosting.findFirst({
+          where: { id: jobPostingId, userId },
+        });
+        job = prismaJsonToJobPosting(j?.structuredJson);
+      }
     }
     if (!job) {
       return NextResponse.json(
@@ -65,6 +83,17 @@ export async function POST(req: Request) {
     });
     const analysis = await analyzeMatch({ tailored, job });
     const rawText = structuredResumeToPlainText(tailored);
+
+    if (!useDb()) {
+      const id = crypto.randomUUID();
+      store.tailored.push({ id, userId, tailored, analysis, rawText });
+      return NextResponse.json({
+        id,
+        tailored,
+        analysis,
+        rawText,
+      });
+    }
 
     const row = await prisma.tailoredResume.create({
       data: {

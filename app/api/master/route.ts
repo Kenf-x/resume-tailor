@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getFallbackStore, useDb } from "@/lib/fallback-store";
 import { prismaJsonToStructuredResume } from "@/lib/prisma-json";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
@@ -7,6 +8,13 @@ import { mergeResumes } from "@/services/resume-merge";
 export async function GET() {
   try {
     const userId = await ensureDefaultUser();
+    if (!useDb()) {
+      const master = getFallbackStore().master;
+      if (!master || master.userId !== userId) {
+        return NextResponse.json({ master: null });
+      }
+      return NextResponse.json({ master });
+    }
     const master = await prisma.masterResume.findFirst({
       where: { userId },
       orderBy: { updatedAt: "desc" },
@@ -30,6 +38,30 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const userId = await ensureDefaultUser();
+    if (!useDb()) {
+      const store = getFallbackStore();
+      const resumes = store.uploaded
+        .filter((r) => r.userId === userId && r.structured)
+        .map((r) => r.structured!);
+      if (!resumes.length) {
+        return NextResponse.json(
+          { error: "No parsed resumes. Upload and parse resumes first." },
+          { status: 400 }
+        );
+      }
+      const merged = await mergeResumes(resumes);
+      const master = {
+        id: crypto.randomUUID(),
+        userId,
+        structuredJson: merged,
+        updatedAt: new Date().toISOString(),
+      };
+      store.master = master;
+      return NextResponse.json({
+        id: master.id,
+        structuredJson: merged,
+      });
+    }
     const parsedList = await prisma.parsedResume.findMany({
       where: { userId },
       include: { uploadedResume: true },
@@ -76,6 +108,18 @@ export async function PUT(req: Request) {
     const id = body.id as string | undefined;
     if (!structured) {
       return NextResponse.json({ error: "structuredJson required" }, { status: 400 });
+    }
+
+    if (!useDb()) {
+      const store = getFallbackStore();
+      const id = (body.id as string | undefined) ?? crypto.randomUUID();
+      store.master = {
+        id,
+        userId,
+        structuredJson: structured,
+        updatedAt: new Date().toISOString(),
+      };
+      return NextResponse.json({ id, ok: true });
     }
 
     if (id) {

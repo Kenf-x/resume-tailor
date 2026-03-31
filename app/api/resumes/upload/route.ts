@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getFallbackStore, useDb } from "@/lib/fallback-store";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
 import { saveUploadedFile } from "@/lib/storage";
@@ -22,6 +23,53 @@ export async function POST(req: Request) {
 
     const id = crypto.randomUUID();
     const storagePath = await saveUploadedFile(buffer, id, sourceFileName);
+
+    if (!useDb()) {
+      const now = new Date().toISOString();
+      const store = getFallbackStore();
+      const uploaded = {
+        id,
+        userId,
+        sourceFileName,
+        mimeType,
+        parseStatus: "PENDING" as const,
+        parseError: null,
+        createdAt: now,
+        updatedAt: now,
+        rawText: "",
+      };
+      store.uploaded.push(uploaded);
+
+      let rawText: string;
+      try {
+        rawText = await extractRawText(buffer, mimeType, sourceFileName);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Extract failed";
+        uploaded.parseStatus = "FAILED";
+        uploaded.parseError = msg;
+        uploaded.updatedAt = new Date().toISOString();
+        return NextResponse.json({ error: msg, id }, { status: 422 });
+      }
+      uploaded.rawText = rawText;
+
+      try {
+        const structured = await parseResumeToStructured(rawText);
+        uploaded.parseStatus = "PARSED";
+        uploaded.updatedAt = new Date().toISOString();
+        (uploaded as { structured?: typeof structured }).structured = structured;
+        return NextResponse.json({
+          id,
+          parseStatus: "PARSED",
+          structured,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Parse failed";
+        uploaded.parseStatus = "FAILED";
+        uploaded.parseError = msg;
+        uploaded.updatedAt = new Date().toISOString();
+        return NextResponse.json({ error: msg, id }, { status: 422 });
+      }
+    }
 
     const uploaded = await prisma.uploadedResume.create({
       data: {

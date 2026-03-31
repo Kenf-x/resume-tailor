@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getFallbackStore, useDb } from "@/lib/fallback-store";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
 import {
@@ -22,6 +23,7 @@ export async function POST(req: Request) {
       );
     }
 
+    const store = getFallbackStore();
     let rawText: string;
     let platform: string;
     let structured: JobPostingStructured;
@@ -34,6 +36,24 @@ export async function POST(req: Request) {
     } else if (url) {
       const result = await extractJobFromUrlOrThrow(url);
       if (result.needsPaste) {
+        if (!useDb()) {
+          const row = {
+            id: crypto.randomUUID(),
+            userId,
+            sourceUrl: url,
+            sourcePlatform: result.platform,
+            rawText: "",
+            structured: result.structured,
+            note: result.note ?? "Paste required",
+          };
+          store.jobs.push(row);
+          return NextResponse.json({
+            id: row.id,
+            needsPaste: true,
+            note: result.note,
+            structured: result.structured,
+          });
+        }
         const row = await prisma.jobPosting.create({
           data: {
             userId,
@@ -56,6 +76,25 @@ export async function POST(req: Request) {
       structured = result.structured;
     } else {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
+
+    if (!useDb()) {
+      const row = {
+        id: crypto.randomUUID(),
+        userId,
+        sourceUrl: url ?? undefined,
+        sourcePlatform: platform,
+        rawText,
+        structured,
+        note: extractionNote,
+      };
+      store.jobs.push(row);
+      return NextResponse.json({
+        id: row.id,
+        needsPaste: false,
+        structured,
+        rawText,
+      });
     }
 
     const row = await prisma.jobPosting.create({
