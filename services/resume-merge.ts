@@ -1,4 +1,5 @@
 import { generateId } from "@/lib/utils";
+import { allowHeuristicFallback } from "@/lib/env";
 import type { StructuredResume, WorkExperience } from "@/types/resume";
 import { completeJson } from "./ai/client";
 import { MERGE_SYSTEM, mergeUserPrompt } from "./ai/prompts";
@@ -133,6 +134,11 @@ export async function mergeResumes(resumes: StructuredResume[]): Promise<Structu
   if (resumes.length === 0) return emptyResume();
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
+    if (!allowHeuristicFallback()) {
+      throw new Error(
+        "OpenAI is not configured. Set OPENAI_API_KEY (or enable ALLOW_HEURISTIC_FALLBACK=true for basic mode)."
+      );
+    }
     return mergeResumesDeterministic(resumes);
   }
   try {
@@ -141,7 +147,11 @@ export async function mergeResumes(resumes: StructuredResume[]): Promise<Structu
       user: mergeUserPrompt(resumes),
     });
     return JSON.parse(json) as StructuredResume;
-  } catch {
+  } catch (err) {
+    if (!allowHeuristicFallback()) {
+      const msg = err instanceof Error ? err.message : "Unknown merge error";
+      throw new Error(`OpenAI resume merge failed: ${msg}`);
+    }
     return mergeResumesDeterministic(resumes);
   }
 }

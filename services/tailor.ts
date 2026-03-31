@@ -6,6 +6,7 @@ import type {
   TailoringIntensity,
   WorkExperience,
 } from "@/types/resume";
+import { allowHeuristicFallback } from "@/lib/env";
 import { completeJson } from "./ai/client";
 import {
   MATCH_SYSTEM,
@@ -148,6 +149,11 @@ export async function tailorResume(options: {
 }): Promise<StructuredResume> {
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
+    if (!allowHeuristicFallback()) {
+      throw new Error(
+        "OpenAI is not configured. Set OPENAI_API_KEY (or enable ALLOW_HEURISTIC_FALLBACK=true for basic mode)."
+      );
+    }
     return heuristicallyTailor(options);
   }
   try {
@@ -161,7 +167,11 @@ export async function tailorResume(options: {
       ),
     });
     return JSON.parse(json) as StructuredResume;
-  } catch {
+  } catch (err) {
+    if (!allowHeuristicFallback()) {
+      const msg = err instanceof Error ? err.message : "Unknown tailoring error";
+      throw new Error(`OpenAI tailoring failed: ${msg}`);
+    }
     return heuristicallyTailor(options);
   }
 }
@@ -172,6 +182,11 @@ export async function analyzeMatch(options: {
 }): Promise<KeywordMatchAnalysisData> {
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
+    if (!allowHeuristicFallback()) {
+      throw new Error(
+        "OpenAI is not configured. Set OPENAI_API_KEY (or enable ALLOW_HEURISTIC_FALLBACK=true for basic mode)."
+      );
+    }
     return heuristicMatchAnalysis(options);
   }
   try {
@@ -186,7 +201,11 @@ export async function analyzeMatch(options: {
       suggestions: data.suggestions ?? [],
       matchScore: Number.isFinite(data.matchScore) ? data.matchScore : 0,
     };
-  } catch {
+  } catch (err) {
+    if (!allowHeuristicFallback()) {
+      const msg = err instanceof Error ? err.message : "Unknown match analysis error";
+      throw new Error(`OpenAI match analysis failed: ${msg}`);
+    }
     return heuristicMatchAnalysis(options);
   }
 }

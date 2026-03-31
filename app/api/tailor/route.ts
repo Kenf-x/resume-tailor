@@ -154,6 +154,7 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "Tailoring failed" }, { status: 500 });
+    const msg = e instanceof Error ? e.message : "Tailoring failed";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

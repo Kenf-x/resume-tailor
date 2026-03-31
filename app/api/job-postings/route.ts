@@ -116,6 +116,7 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "Job intake failed" }, { status: 500 });
+    const msg = e instanceof Error ? e.message : "Job intake failed";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

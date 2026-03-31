@@ -35,6 +35,7 @@ export function ResumeDashboard() {
   const [tailoredText, setTailoredText] = useState("");
   const [analysis, setAnalysis] = useState<KeywordMatchAnalysisData | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
+  const [openAIConfigured, setOpenAIConfigured] = useState<boolean | null>(null);
 
   const step = useMemo(() => {
     if (!resumes.length) return 0;
@@ -57,6 +58,21 @@ export function ResumeDashboard() {
   useEffect(() => {
     void refreshResumes();
   }, [refreshResumes]);
+
+  useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        const res = await fetch("/api/system-status");
+        const data = await res.json();
+        if (res.ok) {
+          setOpenAIConfigured(Boolean(data.openAIConfigured));
+        }
+      } catch {
+        setOpenAIConfigured(null);
+      }
+    };
+    void loadStatus();
+  }, []);
 
   useEffect(() => {
     const parsedIds = resumes.filter((r) => r.parseStatus === "PARSED").map((r) => r.id);
@@ -224,6 +240,12 @@ export function ResumeDashboard() {
           output directly to the job you are applying for.
         </p>
         <WorkflowSteps active={step} />
+        {openAIConfigured === false && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            OpenAI is not configured. Resume parsing and tailoring quality will be poor unless
+            OPENAI_API_KEY is set.
+          </p>
+        )}
       </header>
 
       <section className="grid gap-8 lg:grid-cols-2">

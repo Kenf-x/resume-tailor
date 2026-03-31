@@ -1,4 +1,5 @@
 import { load } from "cheerio";
+import { allowHeuristicFallback } from "@/lib/env";
 import type { JobPostingStructured } from "@/types/resume";
 import { completeJson } from "./ai/client";
 import { JOB_ANALYSIS_SYSTEM, jobAnalysisUserPrompt } from "./ai/prompts";
@@ -69,6 +70,11 @@ function heuristicJob(rawText: string): JobPostingStructured {
 export async function analyzeJobText(rawText: string): Promise<JobPostingStructured> {
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
+    if (!allowHeuristicFallback()) {
+      throw new Error(
+        "OpenAI is not configured. Set OPENAI_API_KEY (or enable ALLOW_HEURISTIC_FALLBACK=true for basic mode)."
+      );
+    }
     return heuristicJob(rawText);
   }
   try {
@@ -77,7 +83,11 @@ export async function analyzeJobText(rawText: string): Promise<JobPostingStructu
       user: jobAnalysisUserPrompt(rawText),
     });
     return JSON.parse(json) as JobPostingStructured;
-  } catch {
+  } catch (err) {
+    if (!allowHeuristicFallback()) {
+      const msg = err instanceof Error ? err.message : "Unknown job analysis error";
+      throw new Error(`OpenAI job analysis failed: ${msg}`);
+    }
     return heuristicJob(rawText);
   }
 }

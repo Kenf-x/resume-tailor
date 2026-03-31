@@ -1,4 +1,5 @@
 import { generateId } from "@/lib/utils";
+import { allowHeuristicFallback } from "@/lib/env";
 import type { StructuredResume } from "@/types/resume";
 import { completeJson } from "./ai/client";
 import { RESUME_PARSE_SYSTEM, resumeParseUserPrompt } from "./ai/prompts";
@@ -83,6 +84,11 @@ function extractSkillsHeuristic(text: string): string[] {
 export async function parseResumeToStructured(rawText: string): Promise<StructuredResume> {
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
+    if (!allowHeuristicFallback()) {
+      throw new Error(
+        "OpenAI is not configured. Set OPENAI_API_KEY (or enable ALLOW_HEURISTIC_FALLBACK=true for basic mode)."
+      );
+    }
     return heuristicStructuredResume(rawText);
   }
   try {
@@ -92,7 +98,11 @@ export async function parseResumeToStructured(rawText: string): Promise<Structur
     });
     const parsed = JSON.parse(json) as StructuredResume;
     return normalizeStructuredResume(parsed);
-  } catch {
+  } catch (err) {
+    if (!allowHeuristicFallback()) {
+      const msg = err instanceof Error ? err.message : "Unknown parse error";
+      throw new Error(`OpenAI resume parsing failed: ${msg}`);
+    }
     return heuristicStructuredResume(rawText);
   }
 }
