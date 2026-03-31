@@ -3,6 +3,7 @@ import type {
   KeywordMatchAnalysisData,
   StructuredResume,
   TailoringIntensity,
+  WorkExperience,
 } from "@/types/resume";
 import { completeJson } from "./ai/client";
 import {
@@ -18,20 +19,119 @@ const intensityMap: Record<TailoringIntensity, "LIGHT" | "MODERATE" | "AGGRESSIV
   AGGRESSIVE: "AGGRESSIVE",
 };
 
+function normalizeWord(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9+#./ -]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function unique<T>(arr: T[]): T[] {
+  return [...new Set(arr)];
+}
+
+function keywordUniverse(job: JobPostingStructured): string[] {
+  const combined = [
+    ...job.keywords,
+    ...job.skills,
+    ...job.requiredQualifications,
+    ...job.preferredQualifications,
+    ...job.responsibilities,
+  ]
+    .flatMap((x) => x.split(/[,;|/]/))
+    .map((s) => normalizeWord(s))
+    .filter((s) => s.length >= 3);
+  return unique(combined).slice(0, 80);
+}
+
+function relevanceScore(text: string, keywords: string[]): number {
+  const norm = normalizeWord(text);
+  let score = 0;
+  for (const kw of keywords) {
+    if (kw && norm.includes(kw)) score += kw.length > 10 ? 2 : 1;
+  }
+  return score;
+}
+
+function sortExperienceByRelevance(
+  experience: WorkExperience[],
+  keywords: string[]
+): WorkExperience[] {
+  return [...experience].sort((a, b) => {
+    const aText = `${a.title} ${a.company} ${a.summary ?? ""} ${a.bullets.join(" ")}`;
+    const bText = `${b.title} ${b.company} ${b.summary ?? ""} ${b.bullets.join(" ")}`;
+    return relevanceScore(bText, keywords) - relevanceScore(aText, keywords);
+  });
+}
+
+function tightenBullet(b: string): string {
+  return b.replace(/^\s*[•*-]\s*/, "").replace(/\s+/g, " ").trim();
+}
+
+function heuristicallyTailor(options: {
+  master: StructuredResume;
+  job: JobPostingStructured;
+  intensity: TailoringIntensity;
+}): StructuredResume {
+  const kws = keywordUniverse(options.job);
+  const master = options.master;
+  const sourceText = normalizeWord(JSON.stringify(master));
+  const matchedKws = kws.filter((k) => sourceText.includes(k)).slice(0, 12);
+  const bulletLimit =
+    options.intensity === "LIGHT" ? 8 : options.intensity === "MODERATE" ? 6 : 4;
+
+  const experience = sortExperienceByRelevance(master.experience, kws).map((ex) => {
+    const sortedBullets = [...ex.bullets]
+      .map(tightenBullet)
+      .sort((a, b) => relevanceScore(b, kws) - relevanceScore(a, kws));
+    return {
+      ...ex,
+      bullets:
+        options.intensity === "LIGHT"
+          ? sortedBullets
+          : sortedBullets.slice(0, Math.min(sortedBullets.length, bulletLimit)),
+    };
+  });
+
+  const sortedSkills = [...master.skills].sort(
+    (a, b) => relevanceScore(b, kws) - relevanceScore(a, kws)
+  );
+  const skills =
+    options.intensity === "LIGHT"
+      ? sortedSkills
+      : sortedSkills.slice(0, Math.min(sortedSkills.length, 18));
+
+  const topExperience = experience[0];
+  const summarySeed = master.summary?.trim() || "";
+  const summaryParts = [
+    summarySeed,
+    matchedKws.length ? `Targeted strengths: ${matchedKws.slice(0, 6).join(", ")}.` : "",
+    topExperience ? `Most relevant role: ${topExperience.title} at ${topExperience.company}.` : "",
+  ].filter(Boolean);
+
+  return {
+    ...master,
+    summary: summaryParts.join(" ").slice(0, 600),
+    skills,
+    experience,
+    keywords: unique([...master.keywords, ...matchedKws]).slice(0, 40),
+  };
+}
+
 function heuristicMatchAnalysis(options: {
   tailored: StructuredResume;
   job: JobPostingStructured;
 }): KeywordMatchAnalysisData {
-  const jobKw = new Set(options.job.keywords.map((k) => k.toLowerCase()));
-  const resumeText = JSON.stringify(options.tailored).toLowerCase();
-  const matched = options.job.keywords.filter((k) => resumeText.includes(k.toLowerCase()));
-  const missing = options.job.keywords.filter((k) => !resumeText.includes(k.toLowerCase()));
+  const allJobTerms = keywordUniverse(options.job);
+  const jobKw = new Set(allJobTerms);
+  const resumeText = normalizeWord(JSON.stringify(options.tailored));
+  const matched = allJobTerms.filter((k) => resumeText.includes(k));
+  const missing = allJobTerms.filter((k) => !resumeText.includes(k));
   const score = jobKw.size ? Math.round((matched.length / jobKw.size) * 100) : 50;
   return {
-    matchedKeywords: matched,
+    matchedKeywords: matched.slice(0, 30),
     missingKeywords: missing.slice(0, 30),
     suggestions: [
-      "Configure OPENAI_API_KEY for deeper match analysis and tailoring.",
+      "Move high-relevance bullets to the top of the first two roles.",
+      "Use action + impact bullets (verb + result + metric when available).",
+      "Mirror job terminology only where it reflects real experience.",
     ],
     matchScore: Math.min(100, Math.max(0, score)),
   };
@@ -44,7 +144,7 @@ export async function tailorResume(options: {
 }): Promise<StructuredResume> {
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
-    return options.master;
+    return heuristicallyTailor(options);
   }
   try {
     const json = await completeJson({
@@ -57,7 +157,7 @@ export async function tailorResume(options: {
     });
     return JSON.parse(json) as StructuredResume;
   } catch {
-    return options.master;
+    return heuristicallyTailor(options);
   }
 }
 

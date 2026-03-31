@@ -3,6 +3,7 @@ import { TailoringIntensity } from "@prisma/client";
 import { getFallbackStore, useDb } from "@/lib/fallback-store";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
+import { mergeResumes } from "@/services/resume-merge";
 import { analyzeMatch, tailorResume } from "@/services/tailor";
 import type { JobPostingStructured, StructuredResume } from "@/types/resume";
 import { prismaJsonToJobPosting, prismaJsonToStructuredResume } from "@/lib/prisma-json";
@@ -20,12 +21,33 @@ export async function POST(req: Request) {
         : "MODERATE"
     ) as TailoringIntensity;
     const masterId = body.masterId as string | undefined;
+    const sourceResumeIds = (body.sourceResumeIds as string[] | undefined) ?? [];
     const jobPostingId = body.jobPostingId as string | undefined;
     const masterOverride = body.masterJson as StructuredResume | undefined;
     const jobOverride = body.jobJson as JobPostingStructured | undefined;
 
     const store = getFallbackStore();
     let master: StructuredResume | null = masterOverride ?? null;
+    if (!master && sourceResumeIds.length) {
+      if (!useDb()) {
+        const selected = store.uploaded
+          .filter((r) => r.userId === userId && sourceResumeIds.includes(r.id) && r.structured)
+          .map((r) => r.structured as StructuredResume);
+        if (selected.length) {
+          master = await mergeResumes(selected);
+        }
+      } else {
+        const parsed = await prisma.parsedResume.findMany({
+          where: { userId, uploadedResumeId: { in: sourceResumeIds } },
+        });
+        const selected = parsed
+          .map((p) => prismaJsonToStructuredResume(p.structuredJson))
+          .filter(Boolean) as StructuredResume[];
+        if (selected.length) {
+          master = await mergeResumes(selected);
+        }
+      }
+    }
     if (!master && masterId) {
       if (!useDb()) {
         master =
@@ -52,7 +74,7 @@ export async function POST(req: Request) {
     }
     if (!master) {
       return NextResponse.json(
-        { error: "No master resume. Generate a master resume first." },
+        { error: "No source resume selected. Select at least one parsed resume." },
         { status: 400 }
       );
     }

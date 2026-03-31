@@ -64,6 +64,11 @@ export const TAILOR_SYSTEM = `You tailor a resume to a job posting using ONLY th
 - You may rephrase, reorder, and emphasize existing bullets; you may omit less relevant bullets.
 - Incorporate job keywords naturally only where they reflect existing experience/skills.
 - Keep ATS-friendly section titles: Summary, Skills, Experience, Education, Certifications, Projects.
+- Apply proven hiring format conventions:
+  - reverse-chronological experience order unless relevance requires a slight reorder
+  - concise 1-2 line bullets that lead with strong action verbs
+  - prioritize outcome/result language over responsibility-only wording
+  - keep formatting single-column and parser-friendly (no tables/graphics in content)
 - Output ONLY valid JSON for the structured resume schema.`;
 
 export function tailorUserPrompt(

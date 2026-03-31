@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 const STEPS = [
   "Upload resumes",
-  "Master resume",
+  "Select source resumes",
   "Job posting",
   "Tailor",
   "Export",

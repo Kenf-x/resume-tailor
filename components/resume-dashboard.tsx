@@ -6,6 +6,7 @@ import type { JobPostingStructured, KeywordMatchAnalysisData, StructuredResume }
 import { ResumeUploadZone } from "./resume-upload-zone";
 import { WorkflowSteps } from "./workflow-steps";
 import { Button } from "./ui/button";
+import { ResumePreview } from "./resume-preview";
 
 type ResumeRow = {
   id: string;
@@ -18,8 +19,8 @@ type ResumeRow = {
 
 export function ResumeDashboard() {
   const [resumes, setResumes] = useState<ResumeRow[]>([]);
-  const [masterId, setMasterId] = useState<string | null>(null);
-  const [masterText, setMasterText] = useState("");
+  const [selectedResumeIds, setSelectedResumeIds] = useState<string[]>([]);
+  const [selectedResumePreview, setSelectedResumePreview] = useState<StructuredResume | null>(null);
   const [jobUrl, setJobUrl] = useState("");
   const [jobPaste, setJobPaste] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
@@ -31,11 +32,11 @@ export function ResumeDashboard() {
 
   const step = useMemo(() => {
     if (!resumes.length) return 0;
-    if (masterText.trim().length < 20) return 1;
+    if (!selectedResumeIds.length) return 1;
     if (!jobStructured) return 2;
     if (!tailoredText.trim()) return 3;
     return 4;
-  }, [resumes.length, masterText, jobStructured, tailoredText]);
+  }, [resumes.length, selectedResumeIds.length, jobStructured, tailoredText]);
 
   const refreshResumes = useCallback(async () => {
     const res = await fetch("/api/resumes");
@@ -47,63 +48,39 @@ export function ResumeDashboard() {
     setResumes(data.resumes ?? []);
   }, []);
 
-  const refreshMaster = useCallback(async () => {
-    const res = await fetch("/api/master");
-    const data = await res.json();
-    if (!res.ok) return;
-    if (data.master?.structuredJson) {
-      setMasterId(data.master.id);
-      setMasterText(JSON.stringify(data.master.structuredJson, null, 2));
-    }
-  }, []);
-
   useEffect(() => {
     void refreshResumes();
-    void refreshMaster();
-  }, [refreshResumes, refreshMaster]);
+  }, [refreshResumes]);
 
-  const generateMaster = async () => {
-    setLoading("master");
-    try {
-      const res = await fetch("/api/master", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "Could not build master resume");
-        return;
-      }
-      setMasterId(data.id);
-      setMasterText(JSON.stringify(data.structuredJson, null, 2));
-      toast.success("Master resume generated");
-    } finally {
-      setLoading(null);
-    }
+  useEffect(() => {
+    const parsedIds = resumes.filter((r) => r.parseStatus === "PARSED").map((r) => r.id);
+    setSelectedResumeIds((prev) => {
+      const keep = prev.filter((id) => parsedIds.includes(id));
+      return keep.length ? keep : parsedIds.slice(0, 1);
+    });
+  }, [resumes]);
+
+  const toggleResumeSelection = (id: string) => {
+    setSelectedResumeIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
-  const saveMaster = async () => {
-    let parsed: StructuredResume;
-    try {
-      parsed = JSON.parse(masterText) as StructuredResume;
-    } catch {
-      toast.error("Invalid JSON in master resume");
-      return;
-    }
-    setLoading("save-master");
-    try {
-      const res = await fetch("/api/master", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: masterId, structuredJson: parsed }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "Save failed");
+  useEffect(() => {
+    const loadPreview = async () => {
+      const id = selectedResumeIds[0];
+      if (!id) {
+        setSelectedResumePreview(null);
         return;
       }
-      toast.success("Master resume saved");
-    } finally {
-      setLoading(null);
-    }
-  };
+      const res = await fetch(`/api/resumes/${id}`);
+      const data = await res.json();
+      if (res.ok) {
+        setSelectedResumePreview((data.structured as StructuredResume) ?? null);
+      }
+    };
+    void loadPreview();
+  }, [selectedResumeIds]);
 
   const submitJob = async () => {
     if (!jobUrl.trim() && !jobPaste.trim()) {
@@ -137,11 +114,8 @@ export function ResumeDashboard() {
   };
 
   const runTailor = async () => {
-    let masterJson: StructuredResume;
-    try {
-      masterJson = JSON.parse(masterText) as StructuredResume;
-    } catch {
-      toast.error("Fix master resume JSON before tailoring");
+    if (!selectedResumeIds.length) {
+      toast.error("Select at least one parsed resume");
       return;
     }
     setLoading("tailor");
@@ -150,10 +124,9 @@ export function ResumeDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          masterId: masterId ?? undefined,
+          sourceResumeIds: selectedResumeIds,
           jobPostingId: jobId ?? undefined,
           intensity,
-          masterJson,
           jobJson: jobStructured ?? undefined,
         }),
       });
@@ -222,6 +195,14 @@ export function ResumeDashboard() {
     }
   };
 
+  const tailoredResume = useMemo(() => {
+    try {
+      return JSON.parse(tailoredText) as StructuredResume;
+    } catch {
+      return null;
+    }
+  }, [tailoredText]);
+
   return (
     <div className="mx-auto max-w-6xl space-y-10 px-4 py-10">
       <header className="space-y-3 border-b border-zinc-200 pb-8 dark:border-zinc-800">
@@ -229,13 +210,11 @@ export function ResumeDashboard() {
           Resume Tailor
         </p>
         <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Master resume & job-specific versions
+          Job-targeted resume tailoring
         </h1>
         <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-          Upload multiple resumes, merge into one master profile, then tailor it to a posting.
-          Content stays grounded in your uploads and edits—configure{" "}
-          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">OPENAI_API_KEY</code> for
-          AI parsing and tailoring.
+          Upload and catalog your resumes, select source resumes for each application, and tailor
+          output directly to the job you are applying for.
         </p>
         <WorkflowSteps active={step} />
       </header>
@@ -243,18 +222,26 @@ export function ResumeDashboard() {
       <section className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            1. Upload resumes
+            1. Upload + catalog resumes
           </h2>
           <ResumeUploadZone onUploaded={() => void refreshResumes()} disabled={Boolean(loading)} />
           <ul className="space-y-2 text-sm">
             {resumes.map((r) => (
               <li
                 key={r.id}
-                className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 dark:border-zinc-800"
+                className="flex items-center justify-between gap-2 rounded-lg border border-zinc-100 px-3 py-2 dark:border-zinc-800"
               >
-                <span className="truncate font-medium text-zinc-800 dark:text-zinc-200">
-                  {r.sourceFileName}
-                </span>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedResumeIds.includes(r.id)}
+                    disabled={r.parseStatus !== "PARSED"}
+                    onChange={() => toggleResumeSelection(r.id)}
+                  />
+                  <span className="truncate font-medium text-zinc-800 dark:text-zinc-200">
+                    {r.sourceFileName}
+                  </span>
+                </label>
                 <span
                   className={
                     r.parseStatus === "PARSED"
@@ -270,32 +257,13 @@ export function ResumeDashboard() {
               <li className="text-zinc-500">No files yet. Upload PDF, DOCX, or TXT.</li>
             )}
           </ul>
-          <Button
-            disabled={!resumes.some((r) => r.parseStatus === "PARSED") || Boolean(loading)}
-            onClick={() => void generateMaster()}
-          >
-            {loading === "master" ? "Generating…" : "Generate master resume"}
-          </Button>
         </div>
 
         <div className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            2. Master resume (edit JSON)
+            2. Selected resume preview
           </h2>
-          <textarea
-            className="min-h-[280px] w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            value={masterText}
-            onChange={(e) => setMasterText(e.target.value)}
-            spellCheck={false}
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => void saveMaster()} disabled={Boolean(loading)}>
-              {loading === "save-master" ? "Saving…" : "Save master"}
-            </Button>
-            <Button variant="ghost" onClick={() => void refreshMaster()}>
-              Reload from server
-            </Button>
-          </div>
+          <ResumePreview title="Selected source resume" resume={selectedResumePreview} />
         </div>
       </section>
 
@@ -325,17 +293,10 @@ export function ResumeDashboard() {
           <Button onClick={() => void submitJob()} disabled={Boolean(loading)}>
             {loading === "job" ? "Processing…" : "Analyze job"}
           </Button>
-          {jobStructured && (
-            <pre className="max-h-48 overflow-auto rounded-lg bg-zinc-50 p-3 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-              {JSON.stringify(jobStructured, null, 2)}
-            </pre>
-          )}
         </div>
 
         <div className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            4. Tailor
-          </h2>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">4. Tailor</h2>
           <div className="flex flex-wrap gap-2">
             {(["LIGHT", "MODERATE", "AGGRESSIVE"] as const).map((i) => (
               <button
@@ -354,9 +315,7 @@ export function ResumeDashboard() {
           </div>
           <Button
             onClick={() => void runTailor()}
-            disabled={
-              Boolean(loading) || !jobStructured || masterText.trim().length < 20
-            }
+            disabled={Boolean(loading) || !jobStructured || !selectedResumeIds.length}
           >
             {loading === "tailor" ? "Tailoring…" : "Generate tailored resume"}
           </Button>
@@ -373,12 +332,6 @@ export function ResumeDashboard() {
               <p className="text-xs text-amber-700 dark:text-amber-300">
                 {analysis.missingKeywords.slice(0, 12).join(", ")}
               </p>
-              <p className="text-xs text-zinc-500">Suggestions</p>
-              <ul className="list-disc pl-4 text-xs text-zinc-700 dark:text-zinc-300">
-                {analysis.suggestions.slice(0, 6).map((s) => (
-                  <li key={s}>{s}</li>
-                ))}
-              </ul>
             </div>
           )}
         </div>
@@ -388,16 +341,17 @@ export function ResumeDashboard() {
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
           5. Tailored resume & export
         </h2>
+        <ResumePreview title="Tailored resume preview" resume={tailoredResume} />
         <textarea
-          className="min-h-[320px] w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          className="min-h-[220px] w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
           value={tailoredText}
           onChange={(e) => setTailoredText(e.target.value)}
           spellCheck={false}
-          placeholder="Tailored JSON appears here after you run “Generate tailored resume”."
+          placeholder="Tailored JSON appears here after you run 'Generate tailored resume'."
         />
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => saveTailoredEdit()}>
-            Apply JSON edits
+            Validate JSON
           </Button>
           <Button variant="secondary" onClick={() => void copyTailored()}>
             Copy to clipboard
