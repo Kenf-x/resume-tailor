@@ -1,0 +1,109 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ParseStatus {
+  PENDING
+  PARSED
+  FAILED
+}
+
+enum TailoringIntensity {
+  LIGHT
+  MODERATE
+  AGGRESSIVE
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String?            @unique
+  createdAt         DateTime           @default(now())
+  uploadedResumes   UploadedResume[]
+  parsedResumes     ParsedResume[]
+  masterResumes     MasterResume[]
+  jobPostings       JobPosting[]
+  tailoredResumes   TailoredResume[]
+}
+
+model UploadedResume {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceFileName String
+  sourcePlatform String?      @default("upload")
+  storagePath    String
+  mimeType       String
+  rawText        String?      @db.Text
+  parseStatus    ParseStatus  @default(PENDING)
+  parseError     String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  parsed         ParsedResume?
+}
+
+model ParsedResume {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  uploadedResumeId String          @unique
+  uploadedResume   UploadedResume  @relation(fields: [uploadedResumeId], references: [id], onDelete: Cascade)
+  rawText          String          @db.Text
+  structuredJson   Json
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model MasterResume {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  structuredJson   Json
+  sourceSummary    String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model JobPosting {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceUrl        String?  @db.Text
+  sourcePlatform   String?
+  rawText          String   @db.Text
+  structuredJson   Json
+  extractionNote   String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model TailoredResume {
+  id               String             @id @default(cuid())
+  userId           String
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterResumeId   String?
+  jobPostingId     String?
+  intensity        TailoringIntensity @default(MODERATE)
+  structuredJson   Json
+  rawText          String?            @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  analysis         KeywordMatchAnalysis?
+}
+
+model KeywordMatchAnalysis {
+  id                 String         @id @default(cuid())
+  tailoredResumeId   String         @unique
+  tailoredResume     TailoredResume @relation(fields: [tailoredResumeId], references: [id], onDelete: Cascade)
+  matchedKeywords    Json
+  missingKeywords    Json
+  suggestions        Json
+  matchScore         Float
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
