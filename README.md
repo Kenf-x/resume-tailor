@@ -136,14 +136,36 @@ npm run start
 
 ## Push to GitHub
 
-From this folder on your machine (with [GitHub CLI](https://cli.github.com) installed and `gh auth login` done):
+**This has to run on your computer** (the AI cannot log in as you). In Cursor: **Terminal → New Terminal**, then:
 
 ```bash
+cd "/Users/k/Desktop/APP DEV/WEB BASED RESUME APP"
 chmod +x scripts/push-to-github.sh
+brew install gh          # once, if you don’t have gh
+gh auth login            # once, browser login
 ./scripts/push-to-github.sh
 ```
 
-That commits everything except `.env`, creates a **public** repo named `resume-tailor` (override with `GITHUB_REPO_NAME=my-repo`), and pushes `main`. If the name is taken, set `GITHUB_REPO_NAME` to something else.
+That commits everything except `.env`, creates a **public** repo named `resume-tailor`, and pushes `main`.
+
+**If you still don’t see it on GitHub:**
+
+1. Confirm you’re logged in: `gh auth status` (should show your GitHub username).
+2. If the name `resume-tailor` is already taken, use another name:
+   ```bash
+   GITHUB_REPO_NAME=resume-tailor-myname ./scripts/push-to-github.sh
+   ```
+3. **Manual push** (no `gh` create): create a **new empty** repo at [github.com/new](https://github.com/new) (any name, no README). Then:
+   ```bash
+   cd "/Users/k/Desktop/APP DEV/WEB BASED RESUME APP"
+   git add -A && git reset -- .env
+   git commit -m "feat: Resume Tailor" || true
+   git branch -M main
+   git remote remove origin 2>/dev/null || true
+   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+   git push -u origin main
+   ```
+   Replace `YOUR_USERNAME` and `YOUR_REPO_NAME`. Use **HTTPS** with a [Personal Access Token](https://github.com/settings/tokens) as the password if prompted, or set up SSH and use `git@github.com:USER/REPO.git`.
 
 ## Production notes
 
