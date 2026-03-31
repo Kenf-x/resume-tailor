@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
     if (format === "docx") {
       const buf = await structuredResumeToDocxBuffer(resume);
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
     if (format === "pdf") {
       const buf = await structuredResumeToPdfBuffer(resume);
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${fileNameBase}.pdf"`,
