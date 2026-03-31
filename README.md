@@ -104,11 +104,21 @@ npm run build
 npm run start
 ```
 
-## Deploy (Vercel)
+## Connect GitHub to Vercel (step by step)
 
-1. Push the repo to GitHub/GitLab/Bitbucket (or use the Vercel CLI with a linked folder).
-2. In [Vercel](https://vercel.com), **Import** the repository. Framework: **Next.js** (auto-detected).
-3. Add **Environment variables** (Production and Preview as needed):
+1. **Sign in** at [vercel.com](https://vercel.com) with **Continue with GitHub** (same account that owns `Kenf-x/resume-tailor` or one that has access).
+2. If asked, **install the Vercel GitHub App** and grant access to your repositories (or only `resume-tailor`).
+3. **Add New…** → **Project** → **Import** `Kenf-x/resume-tailor` (search or pick it from the list).
+4. Leave **Framework Preset** as **Next.js** and **Root Directory** as **`.`** (project root). Don’t change the default **Build** / **Output** unless you know you need to.
+5. **Environment variables** — add these before the first deploy (see table below). You can also add them later under **Project → Settings → Environment Variables**.
+6. Click **Deploy**. When the build finishes, open the **Production** URL Vercel shows.
+7. **Apply the database schema** to your *production* Postgres (see command below). The app will error on DB until this is done.
+
+## Deploy (Vercel) — reference
+
+1. **Repository** is connected to Vercel (steps above).
+2. **Framework:** **Next.js** (auto-detected).
+3. **Environment variables** (Production and Preview as needed):
 
    | Name | Notes |
    |------|--------|
