@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
 import { analyzeMatch, tailorResume } from "@/services/tailor";
 import type { JobPostingStructured, StructuredResume } from "@/types/resume";
+import { prismaJsonToJobPosting, prismaJsonToStructuredResume } from "@/lib/prisma-json";
 import { structuredResumeToPlainText } from "@/services/export-text";
 
 export async function POST(req: Request) {
@@ -27,14 +28,14 @@ export async function POST(req: Request) {
       const m = await prisma.masterResume.findFirst({
         where: { id: masterId, userId },
       });
-      master = (m?.structuredJson as StructuredResume) ?? null;
+      master = prismaJsonToStructuredResume(m?.structuredJson);
     }
     if (!master) {
       const latest = await prisma.masterResume.findFirst({
         where: { userId },
         orderBy: { updatedAt: "desc" },
       });
-      master = (latest?.structuredJson as StructuredResume) ?? null;
+      master = prismaJsonToStructuredResume(latest?.structuredJson);
     }
     if (!master) {
       return NextResponse.json(
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
       const j = await prisma.jobPosting.findFirst({
         where: { id: jobPostingId, userId },
       });
-      job = (j?.structuredJson as JobPostingStructured) ?? null;
+      job = prismaJsonToJobPosting(j?.structuredJson);
     }
     if (!job) {
       return NextResponse.json(

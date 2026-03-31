@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { prismaJsonToStructuredResume } from "@/lib/prisma-json";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
 import { mergeResumes } from "@/services/resume-merge";
-import type { StructuredResume } from "@/types/resume";
 
 export async function GET() {
   try {
@@ -41,9 +41,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const resumes = parsedList.map(
-      (p) => p.structuredJson as unknown as StructuredResume
-    );
+    const resumes = parsedList.map((p) => {
+      const r = prismaJsonToStructuredResume(p.structuredJson);
+      if (!r) {
+        throw new Error("Invalid stored parsed resume JSON");
+      }
+      return r;
+    });
     const merged = await mergeResumes(resumes);
 
     const master = await prisma.masterResume.create({
@@ -68,7 +72,7 @@ export async function PUT(req: Request) {
   try {
     const userId = await ensureDefaultUser();
     const body = await req.json();
-    const structured = body.structuredJson as StructuredResume | undefined;
+    const structured = prismaJsonToStructuredResume(body.structuredJson);
     const id = body.id as string | undefined;
     if (!structured) {
       return NextResponse.json({ error: "structuredJson required" }, { status: 400 });
