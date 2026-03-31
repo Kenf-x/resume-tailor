@@ -74,7 +74,8 @@ export const TAILOR_SYSTEM = `You tailor a resume to a job posting using ONLY th
 export function tailorUserPrompt(
   master: StructuredResume,
   job: JobPostingStructured,
-  intensity: "LIGHT" | "MODERATE" | "AGGRESSIVE"
+  intensity: "LIGHT" | "MODERATE" | "AGGRESSIVE",
+  outputMode: "CONCISE" | "FULL" = "CONCISE"
 ): string {
   const intensityNote =
     intensity === "LIGHT"
@@ -83,7 +84,13 @@ export function tailorUserPrompt(
         ? "Moderate edits: stronger alignment and reordering; keep length similar."
         : "Aggressive but truthful: maximize relevance by reordering and condensing; still no fabricated facts.";
 
+  const outputNote =
+    outputMode === "FULL"
+      ? "Output mode FULL: keep all relevant roles/sections and avoid dropping content unless clearly duplicate/noise."
+      : "Output mode CONCISE: prioritize relevance and brevity while preserving factual accuracy.";
+
   return `${intensityNote}
+${outputNote}
 
 Master resume (source of truth):
 ${JSON.stringify(master).slice(0, 100000)}

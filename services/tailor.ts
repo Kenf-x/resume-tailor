@@ -2,6 +2,7 @@ import type {
   JobPostingStructured,
   KeywordMatchAnalysisData,
   StructuredResume,
+  TailorOutputMode,
   TailoringIntensity,
   WorkExperience,
 } from "@/types/resume";
@@ -69,11 +70,13 @@ function heuristicallyTailor(options: {
   master: StructuredResume;
   job: JobPostingStructured;
   intensity: TailoringIntensity;
+  outputMode?: TailorOutputMode;
 }): StructuredResume {
   const kws = keywordUniverse(options.job);
   const master = options.master;
   const sourceText = normalizeWord(JSON.stringify(master));
   const matchedKws = kws.filter((k) => sourceText.includes(k)).slice(0, 12);
+  const isFullOutput = options.outputMode === "FULL";
   const bulletLimit =
     options.intensity === "LIGHT" ? 8 : options.intensity === "MODERATE" ? 6 : 4;
 
@@ -84,7 +87,7 @@ function heuristicallyTailor(options: {
     return {
       ...ex,
       bullets:
-        options.intensity === "LIGHT"
+        isFullOutput || options.intensity === "LIGHT"
           ? sortedBullets
           : sortedBullets.slice(0, Math.min(sortedBullets.length, bulletLimit)),
     };
@@ -94,7 +97,7 @@ function heuristicallyTailor(options: {
     (a, b) => relevanceScore(b, kws) - relevanceScore(a, kws)
   );
   const skills =
-    options.intensity === "LIGHT"
+    isFullOutput || options.intensity === "LIGHT"
       ? sortedSkills
       : sortedSkills.slice(0, Math.min(sortedSkills.length, 18));
 
@@ -141,6 +144,7 @@ export async function tailorResume(options: {
   master: StructuredResume;
   job: JobPostingStructured;
   intensity: TailoringIntensity;
+  outputMode?: TailorOutputMode;
 }): Promise<StructuredResume> {
   const { getOpenAI } = await import("./ai/client");
   if (!getOpenAI()) {
@@ -152,7 +156,8 @@ export async function tailorResume(options: {
       user: tailorUserPrompt(
         options.master,
         options.job,
-        intensityMap[options.intensity]
+        intensityMap[options.intensity],
+        options.outputMode ?? "CONCISE"
       ),
     });
     return JSON.parse(json) as StructuredResume;

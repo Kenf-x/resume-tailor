@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { JobPostingStructured, KeywordMatchAnalysisData, StructuredResume } from "@/types/resume";
+import type {
+  JobPostingStructured,
+  KeywordMatchAnalysisData,
+  StructuredResume,
+  TailorOutputMode,
+} from "@/types/resume";
 import { ResumeUploadZone } from "./resume-upload-zone";
 import { WorkflowSteps } from "./workflow-steps";
 import { Button } from "./ui/button";
@@ -26,6 +31,7 @@ export function ResumeDashboard() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStructured, setJobStructured] = useState<JobPostingStructured | null>(null);
   const [intensity, setIntensity] = useState<"LIGHT" | "MODERATE" | "AGGRESSIVE">("MODERATE");
+  const [outputMode, setOutputMode] = useState<TailorOutputMode>("CONCISE");
   const [tailoredText, setTailoredText] = useState("");
   const [analysis, setAnalysis] = useState<KeywordMatchAnalysisData | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -127,6 +133,7 @@ export function ResumeDashboard() {
           sourceResumeIds: selectedResumeIds,
           jobPostingId: jobId ?? undefined,
           intensity,
+          outputMode,
           jobJson: jobStructured ?? undefined,
         }),
       });
@@ -313,6 +320,27 @@ export function ResumeDashboard() {
               </button>
             ))}
           </div>
+          <div className="flex flex-wrap gap-2">
+            {(["CONCISE", "FULL"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setOutputMode(mode)}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  outputMode === mode
+                    ? "bg-blue-700 text-white"
+                    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                }`}
+              >
+                {mode === "CONCISE" ? "Concise output" : "Full output"}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {outputMode === "FULL"
+              ? "Full output keeps all relevant roles and bullets."
+              : "Concise output trims lower-priority content for a tighter resume."}
+          </p>
           <Button
             onClick={() => void runTailor()}
             disabled={Boolean(loading) || !jobStructured || !selectedResumeIds.length}
@@ -341,7 +369,11 @@ export function ResumeDashboard() {
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
           5. Tailored resume & export
         </h2>
-        <ResumePreview title="Tailored resume preview" resume={tailoredResume} />
+        <ResumePreview
+          title="Tailored resume preview"
+          resume={tailoredResume}
+          showAll={outputMode === "FULL"}
+        />
         <textarea
           className="min-h-[220px] w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
           value={tailoredText}

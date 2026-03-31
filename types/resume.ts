@@ -66,6 +66,7 @@ export interface StructuredResume {
 }
 
 export type TailoringIntensity = "LIGHT" | "MODERATE" | "AGGRESSIVE";
+export type TailorOutputMode = "CONCISE" | "FULL";
 
 export interface JobPostingStructured {
   title: string;

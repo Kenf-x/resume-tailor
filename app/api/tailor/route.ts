@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureDefaultUser } from "@/lib/user";
 import { mergeResumes } from "@/services/resume-merge";
 import { analyzeMatch, tailorResume } from "@/services/tailor";
-import type { JobPostingStructured, StructuredResume } from "@/types/resume";
+import type { JobPostingStructured, StructuredResume, TailorOutputMode } from "@/types/resume";
 import { prismaJsonToJobPosting, prismaJsonToStructuredResume } from "@/lib/prisma-json";
 import { structuredResumeToPlainText } from "@/services/export-text";
 
@@ -14,12 +14,19 @@ export async function POST(req: Request) {
     const userId = await ensureDefaultUser();
     const body = await req.json();
     const rawIntensity = String(body.intensity ?? "MODERATE").toUpperCase();
+    const rawOutputMode = String(body.outputMode ?? "CONCISE").toUpperCase();
     const allowed: TailoringIntensity[] = ["LIGHT", "MODERATE", "AGGRESSIVE"];
+    const allowedOutputModes: TailorOutputMode[] = ["CONCISE", "FULL"];
     const intensity = (
       allowed.includes(rawIntensity as TailoringIntensity)
         ? rawIntensity
         : "MODERATE"
     ) as TailoringIntensity;
+    const outputMode = (
+      allowedOutputModes.includes(rawOutputMode as TailorOutputMode)
+        ? rawOutputMode
+        : "CONCISE"
+    ) as TailorOutputMode;
     const masterId = body.masterId as string | undefined;
     const sourceResumeIds = (body.sourceResumeIds as string[] | undefined) ?? [];
     const jobPostingId = body.jobPostingId as string | undefined;
@@ -102,6 +109,7 @@ export async function POST(req: Request) {
       master,
       job,
       intensity: intensity as "LIGHT" | "MODERATE" | "AGGRESSIVE",
+      outputMode,
     });
     const analysis = await analyzeMatch({ tailored, job });
     const rawText = structuredResumeToPlainText(tailored);
